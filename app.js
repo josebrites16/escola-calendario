@@ -27,7 +27,7 @@ const weekday = d => (d.getDay() + 6) % 7 + 1; // 1 = Segunda … 7 = Domingo
 const DEFAULTS = {
   classes: [], events: [], study: [],
   settings: {
-    apiKey: "", semesterEnd: "", studyTime: "18:00", studyMinutes: 60,
+    geminiKey: "", semesterEnd: "", studyTime: "18:00", studyMinutes: 60,
     examDays: 5, testDays: 4, deliveryDays: 3, classAlert: 10, eventAlertDays: 1,
   },
 };
@@ -285,9 +285,9 @@ function viewSettings() {
 
   <div class="section-title">Leitura de prints (IA)</div>
   <div class="group">
-    <div class="field"><span class="icon-tile" style="background:var(--purple)">${ICON.key}</span><input type="password" data-set="apiKey" placeholder="Chave da API Claude (sk-ant-…)" value="${esc(st.apiKey)}" autocomplete="off" style="text-align:left"></div>
+    <div class="field"><span class="icon-tile" style="background:var(--purple)">${ICON.key}</span><input type="password" data-set="geminiKey" placeholder="Chave grátis do Gemini" value="${esc(st.geminiKey)}" autocomplete="off" style="text-align:left"></div>
   </div>
-  <div class="footnote">Opcional. Sem chave, importas grátis através da app do Claude (modo Grátis no ecrã de importar). Com uma chave paga de console.anthropic.com a leitura é automática — fica guardada só neste iPhone.</div>
+  <div class="footnote">Grátis e sem cartão: entra com a tua conta Google em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--blue)">aistudio.google.com/apikey</a>, toca em "Create API key" e cola-a aqui. Fica guardada só neste iPhone.</div>
 
   <div class="section-title">Dados</div>
   <div class="group">
@@ -295,7 +295,7 @@ function viewSettings() {
     <button class="row link" data-act="restore">Restaurar cópia de segurança</button>
     <button class="row danger" data-act="reset">Apagar tudo</button>
   </div>
-  <div class="footnote" style="text-align:center;margin-top:24px">Escola v3 · ${S.classes.length} aulas · ${S.events.length} datas</div>`;
+  <div class="footnote" style="text-align:center;margin-top:24px">Escola v4 · ${S.classes.length} aulas · ${S.events.length} datas</div>`;
 }
 const numField = (k, label, unit) =>
   `<div class="field"><label>${label}</label><input type="number" inputmode="numeric" min="0" data-set="${k}" value="${S.settings[k]}" style="max-width:70px"><span class="meta" style="color:var(--text2);width:78px">${unit}</span></div>`;
@@ -339,7 +339,7 @@ const ACTIONS = {
   },
   reset: () => {
     if (!confirm("Apagar todas as aulas, datas e o plano de estudo?")) return;
-    const key = S.settings.apiKey; S = structuredClone(DEFAULTS); S.settings.apiKey = key; save(); render(); toast("Tudo apagado");
+    const key = S.settings.geminiKey; S = structuredClone(DEFAULTS); S.settings.geminiKey = key; save(); render(); toast("Tudo apagado");
   },
 };
 
@@ -435,34 +435,40 @@ function taskForm() {
 // ---------- Importar prints ----------
 function importSheet(mode) {
   let images = [];
-  let how = localStorage.getItem("escola-how") || "free";
+  let how = localStorage.getItem("escola-how") === "paste" ? "paste" : "gemini";
   const modeHint = () => mode === "horario" ? "Print do horário semanal: as aulas são lidas com dia, hora e sala." : mode === "calendario" ? "Print do calendário de avaliações: exames, testes, entregas e feriados." : "A IA percebe sozinha se é horário ou calendário (podes misturar).";
-  const draw = () => openSheet(sheetNav("Importar prints", how === "api" ? `<button data-go ${images.length ? "" : "disabled style='opacity:.4'"}>Ler</button>` : `<button data-read>Ler</button>`) + `
+  const keyBox = () => S.settings.geminiKey ? "" : `
+    <div class="section-title">Chave grátis do Gemini (só uma vez)</div>
+    <div class="group"><div class="field"><input type="password" name="gkey" placeholder="Cola aqui a chave" autocomplete="off"></div></div>
+    <div class="footnote">Abre <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--blue)">aistudio.google.com/apikey</a>, entra com a conta Google, toca em <b>Create API key</b>, copia e cola acima. É grátis e não pede cartão.</div>`;
+  const draw = () => openSheet(sheetNav("Importar prints", how === "gemini" ? `<button data-go ${images.length ? "" : "disabled style='opacity:.4'"}>Ler</button>` : `<button data-read>Ler</button>`) + `
     <div class="segmented" style="margin-top:8px">
-      <button data-how="free" class="${how === "free" ? "on" : ""}">Grátis (app Claude)</button>
-      <button data-how="api" class="${how === "api" ? "on" : ""}">Automático (chave)</button>
+      <button data-how="gemini" class="${how === "gemini" ? "on" : ""}">Automático (grátis)</button>
+      <button data-how="paste" class="${how === "paste" ? "on" : ""}">Colar texto</button>
     </div>
     <div class="section-title">O que é o print?</div>
     <div class="segmented">
       ${[["auto", "Detetar"], ["horario", "Horário"], ["calendario", "Calendário"]].map(([k, l]) => `<button data-mode="${k}" class="${mode === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
     <div class="footnote" style="margin-bottom:14px">${modeHint()}</div>
-    ${how === "free" ? `
-    <div class="group">
-      <button class="row indent" data-copy><span class="icon-tile" style="background:var(--blue)">1</span><div class="grow"><div class="title">Copiar o pedido</div><div class="meta">Copia as instruções para a IA</div></div><span class="chev">›</span></button>
-      <a class="row indent" href="https://claude.ai/new" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><span class="icon-tile" style="background:#d97757">2</span><div class="grow"><div class="title">Abrir o Claude</div><div class="meta">Anexa os prints, cola o pedido e envia</div></div><span class="chev">›</span></a>
-      <button class="row indent" data-paste><span class="icon-tile" style="background:var(--green)">3</span><div class="grow"><div class="title">Colar a resposta</div><div class="meta">Copia a resposta do Claude e volta aqui</div></div><span class="chev">›</span></button>
-    </div>
-    <div class="group" style="margin-top:12px"><div class="field"><textarea name="reply" rows="6" placeholder="A resposta do Claude aparece aqui…" style="font-size:13px;font-family:ui-monospace,Menlo,monospace"></textarea></div></div>
-    <button class="btn" data-read style="margin-top:12px">Ler resposta</button>
-    <div class="footnote">Usa a tua conta grátis do Claude (app ou claude.ai). Também funciona com o ChatGPT ou o Gemini. Para copiar a resposta, toca no botão de copiar por baixo da mensagem.</div>` : `
+    ${how === "gemini" ? `
     ${images.length ? `<div class="thumbs">${images.map(i => `<img src="${i.url}">`).join("")}</div>` : ""}
     <button class="btn ${images.length ? "secondary" : ""}" data-pick style="margin-top:12px">${images.length ? "Adicionar mais prints" : "Escolher prints da galeria"}</button>
-    ${!S.settings.apiKey ? `<div class="footnote" style="color:var(--orange);margin-top:14px">⚠️ Este modo precisa de uma chave da API (paga) em Definições. Usa o modo Grátis se não tiveres.</div>` : ""}`}`,
+    ${images.length ? `<button class="btn" data-go>Ler ${images.length} print${images.length > 1 ? "s" : ""}</button>` : ""}
+    ${keyBox()}` : `
+    <div class="group">
+      <button class="row indent" data-copy><span class="icon-tile" style="background:var(--blue)">1</span><div class="grow"><div class="title">Copiar o pedido</div><div class="meta">Cola-o num chat de IA com os prints</div></div><span class="chev">›</span></button>
+      <button class="row indent" data-paste><span class="icon-tile" style="background:var(--green)">2</span><div class="grow"><div class="title">Colar a resposta</div><div class="meta">Copia a resposta da IA e volta aqui</div></div><span class="chev">›</span></button>
+    </div>
+    <div class="group" style="margin-top:12px"><div class="field"><textarea name="reply" rows="6" placeholder="A resposta aparece aqui…" style="font-size:13px;font-family:ui-monospace,Menlo,monospace"></textarea></div></div>
+    <button class="btn" data-read style="margin-top:12px">Ler resposta</button>
+    <div class="footnote">Alternativa sem chave: funciona com qualquer chat de IA (Gemini, ChatGPT, Claude…).</div>`}`,
     sh => {
       const reply = sh.querySelector("[name=reply]");
       if (reply && draw.reply) reply.value = draw.reply;
       reply?.addEventListener("input", () => draw.reply = reply.value);
+      const gkey = sh.querySelector("[name=gkey]");
+      gkey?.addEventListener("change", () => { S.settings.geminiKey = gkey.value.trim(); save(); toast("Chave guardada ✓"); });
       sh.querySelectorAll("[data-how]").forEach(b => b.onclick = () => { how = b.dataset.how; localStorage.setItem("escola-how", how); draw(); });
       sh.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { mode = b.dataset.mode; draw(); });
       sh.querySelector("[data-pick]")?.addEventListener("click", () => {
@@ -470,10 +476,14 @@ function importSheet(mode) {
         fp.onchange = async () => { for (const f of fp.files) images.push(await shrink(f)); draw(); };
         fp.click();
       });
-      sh.querySelector("[data-go]")?.addEventListener("click", () => images.length && runImport(images, mode));
+      sh.querySelectorAll("[data-go]").forEach(b => b.onclick = () => {
+        if (gkey?.value.trim()) { S.settings.geminiKey = gkey.value.trim(); save(); }
+        if (!S.settings.geminiKey) return toast("Cola primeiro a chave do Gemini");
+        images.length && runImport(images, mode);
+      });
       sh.querySelector("[data-copy]")?.addEventListener("click", async () => {
         const text = buildPrompt(mode);
-        try { await navigator.clipboard.writeText(text); toast("Pedido copiado ✓ Agora abre o Claude"); }
+        try { await navigator.clipboard.writeText(text); toast("Pedido copiado ✓"); }
         catch { reply.value = text; reply.select(); toast("Copia o texto da caixa"); }
       });
       sh.querySelector("[data-paste]")?.addEventListener("click", async () => {
@@ -482,7 +492,7 @@ function importSheet(mode) {
       });
       sh.querySelectorAll("[data-read]").forEach(b => b.onclick = () => {
         const text = (reply?.value || "").trim();
-        if (!text) return toast("Cola primeiro a resposta do Claude");
+        if (!text) return toast("Cola primeiro a resposta");
         try { const r = parseResult(text); draw.reply = ""; reviewImport(r); }
         catch (e) { toast(e.message); }
       });
@@ -506,11 +516,10 @@ function shrink(file) {
 }
 
 async function runImport(images, mode) {
-  if (!S.settings.apiKey) { closeSheet(); tab = "definicoes"; render(); return toast("Falta a chave da API"); }
   openSheet(`<div class="sheet-nav"><button data-close>Cancelar</button><b>A ler…</b><button></button></div>
     <div style="text-align:center;padding:60px 20px"><div class="spinner"></div><div class="meta" style="color:var(--text2)">A analisar ${images.length} print${images.length > 1 ? "s" : ""}…<br>Pode demorar uns segundos.</div></div>`);
   try {
-    const result = await extractWithClaude(images, mode);
+    const result = await extractWithGemini(images, mode);
     reviewImport(result);
   } catch (err) {
     console.error(err);
@@ -545,36 +554,39 @@ function parseResult(text) {
   };
 }
 
-let AnthropicSDK;
-async function extractWithClaude(images, mode) {
-  AnthropicSDK ||= (await import("https://esm.sh/@anthropic-ai/sdk")).default;
-  const client = new AnthropicSDK({ apiKey: S.settings.apiKey, dangerouslyAllowBrowser: true });
-  const prompt = buildPrompt(mode);
-  const req = {
-    model: "claude-opus-5-5",
-    max_tokens: 16000,
-    output_config: { effort: "medium" },
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    messages: [{
-      role: "user",
-      content: [
-        ...images.map(i => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: i.b64 } })),
-        { type: "text", text: prompt },
-      ],
-    }],
+// Gemini (Google) — plano gratuito, chave de aistudio.google.com
+async function extractWithGemini(images, mode) {
+  const body = {
+    contents: [{ parts: [
+      ...images.map(i => ({ inline_data: { mime_type: "image/jpeg", data: i.b64 } })),
+      { text: buildPrompt(mode) },
+    ] }],
+    generationConfig: { responseMimeType: "application/json", temperature: 0 },
   };
-  let msg;
-  try {
-    msg = await client.beta.messages.create(req);
-  } catch (e) {
-    if (e?.status === 401) throw new Error("Chave da API inválida. Confirma-a em Definições.");
-    if (e?.status === 429) throw new Error("Demasiados pedidos — espera um minuto e tenta outra vez.");
-    if (e?.status === 400 && /fallback/i.test(e?.message || "")) { delete req.betas; delete req.fallbacks; msg = await client.messages.create(req); }
-    else throw new Error(e?.message || "Falha de ligação.");
+  let res;
+  for (const model of ["gemini-flash-latest", "gemini-2.5-flash"]) {
+    try {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": S.settings.geminiKey },
+        body: JSON.stringify(body),
+      });
+    } catch { throw new Error("Sem ligação à internet."); }
+    if (res.status !== 404) break;
   }
-  if (msg.stop_reason === "refusal") throw new Error("O modelo recusou ler estas imagens. Tenta prints mais claros.");
-  const text = msg.content.filter(b => b.type === "text").map(b => b.text).join("");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const m = err?.error?.message || "";
+    if ((res.status === 400 && /api key/i.test(m)) || res.status === 403) {
+      S.settings.geminiKey = ""; save();
+      throw new Error("A chave do Gemini não é válida. Copia-a outra vez de aistudio.google.com/apikey.");
+    }
+    if (res.status === 429) throw new Error("Atingiste o limite grátis por agora. Espera um minuto e tenta outra vez.");
+    throw new Error(m || `Erro ${res.status}`);
+  }
+  const data = await res.json();
+  const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
+  if (!text) throw new Error("O Gemini não respondeu nada. Tenta outra vez com um print mais nítido.");
   return parseResult(text);
 }
 

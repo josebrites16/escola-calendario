@@ -295,7 +295,7 @@ function viewSettings() {
     <button class="row link" data-act="restore">Restaurar cópia de segurança</button>
     <button class="row danger" data-act="reset">Apagar tudo</button>
   </div>
-  <div class="footnote" style="text-align:center;margin-top:24px">Escola · ${S.classes.length} aulas · ${S.events.length} datas</div>`;
+  <div class="footnote" style="text-align:center;margin-top:24px">Escola v3 · ${S.classes.length} aulas · ${S.events.length} datas</div>`;
 }
 const numField = (k, label, unit) =>
   `<div class="field"><label>${label}</label><input type="number" inputmode="numeric" min="0" data-set="${k}" value="${S.settings[k]}" style="max-width:70px"><span class="meta" style="color:var(--text2);width:78px">${unit}</span></div>`;
@@ -435,7 +435,7 @@ function taskForm() {
 // ---------- Importar prints ----------
 function importSheet(mode) {
   let images = [];
-  let how = S.settings.apiKey ? "api" : "free";
+  let how = localStorage.getItem("escola-how") || "free";
   const modeHint = () => mode === "horario" ? "Print do horário semanal: as aulas são lidas com dia, hora e sala." : mode === "calendario" ? "Print do calendário de avaliações: exames, testes, entregas e feriados." : "A IA percebe sozinha se é horário ou calendário (podes misturar).";
   const draw = () => openSheet(sheetNav("Importar prints", how === "api" ? `<button data-go ${images.length ? "" : "disabled style='opacity:.4'"}>Ler</button>` : `<button data-read>Ler</button>`) + `
     <div class="segmented" style="margin-top:8px">
@@ -463,7 +463,7 @@ function importSheet(mode) {
       const reply = sh.querySelector("[name=reply]");
       if (reply && draw.reply) reply.value = draw.reply;
       reply?.addEventListener("input", () => draw.reply = reply.value);
-      sh.querySelectorAll("[data-how]").forEach(b => b.onclick = () => { how = b.dataset.how; draw(); });
+      sh.querySelectorAll("[data-how]").forEach(b => b.onclick = () => { how = b.dataset.how; localStorage.setItem("escola-how", how); draw(); });
       sh.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { mode = b.dataset.mode; draw(); });
       sh.querySelector("[data-pick]")?.addEventListener("click", () => {
         const fp = $("#filepick"); fp.value = "";
@@ -670,6 +670,6 @@ async function shareFile(blob, name) {
 
 // ---------- Arranque ----------
 rebuildStudy(); save(); render();
-if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js");
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update());
 // atualizar "Hoje" quando se volta à app
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("#sheet").classList.contains("open")) { rebuildStudy(); render(); } });

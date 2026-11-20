@@ -287,7 +287,7 @@ function viewSettings() {
   <div class="group">
     <div class="field"><span class="icon-tile" style="background:var(--purple)">${ICON.key}</span><input type="password" data-set="apiKey" placeholder="Chave da API Claude (sk-ant-…)" value="${esc(st.apiKey)}" autocomplete="off" style="text-align:left"></div>
   </div>
-  <div class="footnote">Para ler os prints, a app usa o Claude. Cria uma chave em console.anthropic.com e cola-a aqui — fica guardada só neste iPhone. Cada print custa uns cêntimos.</div>
+  <div class="footnote">Opcional. Sem chave, importas grátis através da app do Claude (modo Grátis no ecrã de importar). Com uma chave paga de console.anthropic.com a leitura é automática — fica guardada só neste iPhone.</div>
 
   <div class="section-title">Dados</div>
   <div class="group">
@@ -435,23 +435,59 @@ function taskForm() {
 // ---------- Importar prints ----------
 function importSheet(mode) {
   let images = [];
-  const draw = () => openSheet(sheetNav("Importar prints", `<button data-go ${images.length ? "" : "disabled style='opacity:.4'"}>Ler</button>`) + `
+  let how = S.settings.apiKey ? "api" : "free";
+  const modeHint = () => mode === "horario" ? "Print do horário semanal: as aulas são lidas com dia, hora e sala." : mode === "calendario" ? "Print do calendário de avaliações: exames, testes, entregas e feriados." : "A IA percebe sozinha se é horário ou calendário (podes misturar).";
+  const draw = () => openSheet(sheetNav("Importar prints", how === "api" ? `<button data-go ${images.length ? "" : "disabled style='opacity:.4'"}>Ler</button>` : `<button data-read>Ler</button>`) + `
     <div class="segmented" style="margin-top:8px">
+      <button data-how="free" class="${how === "free" ? "on" : ""}">Grátis (app Claude)</button>
+      <button data-how="api" class="${how === "api" ? "on" : ""}">Automático (chave)</button>
+    </div>
+    <div class="section-title">O que é o print?</div>
+    <div class="segmented">
       ${[["auto", "Detetar"], ["horario", "Horário"], ["calendario", "Calendário"]].map(([k, l]) => `<button data-mode="${k}" class="${mode === k ? "on" : ""}">${l}</button>`).join("")}
     </div>
-    <div class="footnote" style="margin-bottom:14px">${mode === "horario" ? "Print do horário semanal: as aulas são lidas com dia, hora e sala." : mode === "calendario" ? "Print do calendário de avaliações: exames, testes, entregas e feriados." : "A IA percebe sozinha se é horário ou calendário (podes misturar)."}</div>
+    <div class="footnote" style="margin-bottom:14px">${modeHint()}</div>
+    ${how === "free" ? `
+    <div class="group">
+      <button class="row indent" data-copy><span class="icon-tile" style="background:var(--blue)">1</span><div class="grow"><div class="title">Copiar o pedido</div><div class="meta">Copia as instruções para a IA</div></div><span class="chev">›</span></button>
+      <a class="row indent" href="https://claude.ai/new" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><span class="icon-tile" style="background:#d97757">2</span><div class="grow"><div class="title">Abrir o Claude</div><div class="meta">Anexa os prints, cola o pedido e envia</div></div><span class="chev">›</span></a>
+      <button class="row indent" data-paste><span class="icon-tile" style="background:var(--green)">3</span><div class="grow"><div class="title">Colar a resposta</div><div class="meta">Copia a resposta do Claude e volta aqui</div></div><span class="chev">›</span></button>
+    </div>
+    <div class="group" style="margin-top:12px"><div class="field"><textarea name="reply" rows="6" placeholder="A resposta do Claude aparece aqui…" style="font-size:13px;font-family:ui-monospace,Menlo,monospace"></textarea></div></div>
+    <button class="btn" data-read style="margin-top:12px">Ler resposta</button>
+    <div class="footnote">Usa a tua conta grátis do Claude (app ou claude.ai). Também funciona com o ChatGPT ou o Gemini. Para copiar a resposta, toca no botão de copiar por baixo da mensagem.</div>` : `
     ${images.length ? `<div class="thumbs">${images.map(i => `<img src="${i.url}">`).join("")}</div>` : ""}
     <button class="btn ${images.length ? "secondary" : ""}" data-pick style="margin-top:12px">${images.length ? "Adicionar mais prints" : "Escolher prints da galeria"}</button>
-    ${!S.settings.apiKey ? `<div class="footnote" style="color:var(--orange);margin-top:14px">⚠️ Primeiro cola a tua chave da API Claude em Definições.</div>` : ""}`,
+    ${!S.settings.apiKey ? `<div class="footnote" style="color:var(--orange);margin-top:14px">⚠️ Este modo precisa de uma chave da API (paga) em Definições. Usa o modo Grátis se não tiveres.</div>` : ""}`}`,
     sh => {
+      const reply = sh.querySelector("[name=reply]");
+      if (reply && draw.reply) reply.value = draw.reply;
+      reply?.addEventListener("input", () => draw.reply = reply.value);
+      sh.querySelectorAll("[data-how]").forEach(b => b.onclick = () => { how = b.dataset.how; draw(); });
       sh.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { mode = b.dataset.mode; draw(); });
-      sh.querySelector("[data-pick]").onclick = () => {
+      sh.querySelector("[data-pick]")?.addEventListener("click", () => {
         const fp = $("#filepick"); fp.value = "";
         fp.onchange = async () => { for (const f of fp.files) images.push(await shrink(f)); draw(); };
         fp.click();
-      };
-      sh.querySelector("[data-go]").onclick = () => images.length && runImport(images, mode);
+      });
+      sh.querySelector("[data-go]")?.addEventListener("click", () => images.length && runImport(images, mode));
+      sh.querySelector("[data-copy]")?.addEventListener("click", async () => {
+        const text = buildPrompt(mode);
+        try { await navigator.clipboard.writeText(text); toast("Pedido copiado ✓ Agora abre o Claude"); }
+        catch { reply.value = text; reply.select(); toast("Copia o texto da caixa"); }
+      });
+      sh.querySelector("[data-paste]")?.addEventListener("click", async () => {
+        try { reply.value = draw.reply = await navigator.clipboard.readText(); toast("Colado"); }
+        catch { reply.focus(); toast("Toca na caixa e escolhe Colar"); }
+      });
+      sh.querySelectorAll("[data-read]").forEach(b => b.onclick = () => {
+        const text = (reply?.value || "").trim();
+        if (!text) return toast("Cola primeiro a resposta do Claude");
+        try { const r = parseResult(text); draw.reply = ""; reviewImport(r); }
+        catch (e) { toast(e.message); }
+      });
     });
+  draw.reply = "";
   draw();
 }
 
@@ -482,13 +518,10 @@ async function runImport(images, mode) {
   }
 }
 
-let AnthropicSDK;
-async function extractWithClaude(images, mode) {
-  AnthropicSDK ||= (await import("https://esm.sh/@anthropic-ai/sdk")).default;
-  const client = new AnthropicSDK({ apiKey: S.settings.apiKey, dangerouslyAllowBrowser: true });
+function buildPrompt(mode) {
   const now = new Date();
   const what = { horario: "um HORÁRIO semanal de aulas", calendario: "um CALENDÁRIO escolar / de avaliações", auto: "um horário semanal de aulas e/ou um calendário escolar de avaliações (descobre qual)" }[mode];
-  const prompt = `Estas imagens são prints de ${what} de um estudante (Portugal). Hoje é ${iso(now)}.
+  return `Estas imagens são prints de ${what} de um estudante (Portugal). Hoje é ${iso(now)}.
 Extrai TUDO o que conseguires e responde APENAS com JSON válido, sem texto à volta, neste formato:
 {"classes":[{"subject":"","day":1,"start":"HH:MM","end":"HH:MM","room":"","type":"","teacher":""}],
  "events":[{"title":"","subject":"","date":"YYYY-MM-DD","time":"HH:MM ou vazio","type":"exame|teste|entrega|apresentacao|feriado|outro","notes":""}]}
@@ -498,6 +531,25 @@ Regras:
 - "events" = datas específicas (exames, testes, frequências, entregas de trabalhos, apresentações, feriados, férias, interrupções). Para períodos (ex.: férias de 2 a 6), cria um evento "feriado" por cada dia útil.
 - Se o ano não aparecer, escolhe o ano letivo atual (a data mais próxima no futuro ou passado recente faz sentido).
 - Não inventes nada que não esteja nas imagens. Listas vazias se não houver.`;
+}
+
+function parseResult(text) {
+  const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+  let data; try { data = JSON.parse(json); } catch { throw new Error("Não percebi a resposta. Confirma que copiaste a resposta toda (começa por { e acaba em })."); }
+  const okTime = t => /^\d{1,2}:\d{2}$/.test(t || "") ? t.padStart(5, "0") : "";
+  return {
+    classes: (data.classes || []).filter(c => c.subject && c.day >= 1 && c.day <= 7 && okTime(c.start))
+      .map(c => ({ id: uid(), subject: c.subject.trim(), day: +c.day, start: okTime(c.start), end: okTime(c.end) || okTime(c.start), room: c.room || "", type: c.type || "", teacher: c.teacher || "" })),
+    events: (data.events || []).filter(e => e.title && /^\d{4}-\d{2}-\d{2}$/.test(e.date))
+      .map(e => ({ id: uid(), title: e.title.trim(), subject: e.subject || "", date: e.date, time: okTime(e.time), type: TYPES[e.type] ? e.type : "outro", notes: e.notes || "" })),
+  };
+}
+
+let AnthropicSDK;
+async function extractWithClaude(images, mode) {
+  AnthropicSDK ||= (await import("https://esm.sh/@anthropic-ai/sdk")).default;
+  const client = new AnthropicSDK({ apiKey: S.settings.apiKey, dangerouslyAllowBrowser: true });
+  const prompt = buildPrompt(mode);
   const req = {
     model: "claude-opus-5-5",
     max_tokens: 16000,
@@ -523,15 +575,7 @@ Regras:
   }
   if (msg.stop_reason === "refusal") throw new Error("O modelo recusou ler estas imagens. Tenta prints mais claros.");
   const text = msg.content.filter(b => b.type === "text").map(b => b.text).join("");
-  const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-  let data; try { data = JSON.parse(json); } catch { throw new Error("Não percebi a resposta. Tenta de novo com um print mais nítido."); }
-  const okTime = t => /^\d{1,2}:\d{2}$/.test(t || "") ? t.padStart(5, "0") : "";
-  return {
-    classes: (data.classes || []).filter(c => c.subject && c.day >= 1 && c.day <= 7 && okTime(c.start))
-      .map(c => ({ id: uid(), subject: c.subject.trim(), day: +c.day, start: okTime(c.start), end: okTime(c.end) || okTime(c.start), room: c.room || "", type: c.type || "", teacher: c.teacher || "" })),
-    events: (data.events || []).filter(e => e.title && /^\d{4}-\d{2}-\d{2}$/.test(e.date))
-      .map(e => ({ id: uid(), title: e.title.trim(), subject: e.subject || "", date: e.date, time: okTime(e.time), type: TYPES[e.type] ? e.type : "outro", notes: e.notes || "" })),
-  };
+  return parseResult(text);
 }
 
 function reviewImport(r) {
